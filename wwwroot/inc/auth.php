@@ -24,8 +24,12 @@ function authenticate ()
 		$auto_tags,
 		$user_given_tags,
 		$user_auth_src,
+		$user_authorize,
 		$script_mode,
 		$require_local_account;
+
+	if (!isset($user_authorize)) $user_authorize = $user_auth_src;
+
 	// Phase 1. Assert basic pre-requisites, short-circuit the logout request.
 	if (!isset ($user_auth_src) or !isset ($require_local_account))
 		throw new RackTablesError ('secret.php: either user_auth_src or require_local_account are missing', RackTablesError::MISCONFIGURED);
@@ -53,13 +57,12 @@ function authenticate ()
 			$remote_username = $_SERVER['PHP_AUTH_USER'];
 			break;
 		case 'httpd' == $user_auth_src:
-			if
-			(
-				! isset ($_SERVER['REMOTE_USER']) or
-				! strlen ($_SERVER['REMOTE_USER'])
-			)
+			if ( isset ($_SERVER['REMOTE_USER']) && strlen ($_SERVER['REMOTE_USER']))
+				$remote_username = $_SERVER['REMOTE_USER'];
+			elseif ( isset ($_SERVER["HTTP_REMOTE_USER"]) && strlen ($_SERVER['HTTP_REMOTE_USER']))
+				$remote_username = $_SERVER['HTTP_REMOTE_USER'];
+			else
 				throw new RackTablesError ('The web-server didn\'t authenticate the user, although ought to do.', RackTablesError::MISCONFIGURED);
-			$remote_username = $_SERVER['REMOTE_USER'];
 			break;
 		case 'saml' == $user_auth_src:
 			$saml_username = '';
@@ -87,6 +90,16 @@ function authenticate ()
 			$remote_displayname = strlen ($userinfo['user_realname']) ?
 				$userinfo['user_realname'] :
 				$remote_username;
+			if ('ldap' !== $user_authorize) return; // success
+		case 'ldap' == $user_auth_src:
+			$ldap_dispname = '';
+			if (! authenticated_via_ldap ($remote_username, $_SERVER['PHP_AUTH_PW'], $ldap_dispname)) {
+				break; // failure
+			}
+			$remote_displayname = (strlen ($ldap_dispname) ? $ldap_dispname : $remote_username);
+#			$remote_displayname = strlen ($userinfo['user_realname']) ? // local value is most preferred
+#				$userinfo['user_realname'] :
+#				(strlen ($ldap_dispname) ? $ldap_dispname : $remote_username); // then one from LDAP
 			return; // success
 		// When using LDAP, leave a mean to fix things. Admin user is always authenticated locally.
 		case array_key_exists ('user_id', $userinfo) and $userinfo['user_id'] == 1:
@@ -97,14 +110,6 @@ function authenticate ()
 			if (authenticated_via_database ($userinfo, $_SERVER['PHP_AUTH_PW']))
 				return; // success
 			break; // failure
-		case 'ldap' == $user_auth_src:
-			$ldap_dispname = '';
-			if (! authenticated_via_ldap ($remote_username, $_SERVER['PHP_AUTH_PW'], $ldap_dispname))
-				break; // failure
-			$remote_displayname = strlen ($userinfo['user_realname']) ? // local value is most preferred
-				$userinfo['user_realname'] :
-				(strlen ($ldap_dispname) ? $ldap_dispname : $remote_username); // then one from LDAP
-			return; // success
 		case 'saml' == $user_auth_src:
 			$remote_displayname = strlen ($saml_dispname) ? $saml_dispname : $saml_username;
 			return; // success
@@ -373,9 +378,14 @@ function authenticated_via_ldap_nocache ($username, $password, &$ldap_displaynam
 function isLDAPCacheValid ($cache_row, $password_hash, $check_for_refreshing = FALSE)
 {
 	global $LDAP_options;
+	global $user_auth_src;
 	return
 		is_array ($cache_row) &&
-		$cache_row['successful_hash'] === $password_hash &&
+		(
+			'ldap' !== $user_auth_src ||
+			$cache_row['successful_hash'] === $password_hash
+		) &&
+		strlen($cache_row['displayed_name']) > 0 &&
 		$cache_row['success_age'] < $LDAP_options['cache_expiry'] &&
 		(
 			// There are two confidence levels of cache hits: "certain" and "uncertain". In either case
@@ -463,6 +473,7 @@ function authenticated_via_ldap_cache ($username, $password, &$ldap_displayname)
 function queryLDAPServer ($username, $password)
 {
 	global $LDAP_options;
+	global $user_auth_src;
 
 	if (extension_loaded ('ldap') === FALSE)
 		throw new RackTablesError ('LDAP misconfiguration. LDAP PHP Module is not installed.', RackTablesError::MISCONFIGURED);
@@ -572,7 +583,16 @@ function queryLDAPServer ($username, $password)
 	}
 	else
 		throw new RackTablesError ('LDAP misconfiguration. Cannon build username for authentication.', RackTablesError::MISCONFIGURED);
-	$bind = @ldap_bind ($connect, $auth_user_name, $password);
+	if('ldap' === $user_auth_src) {
+		$bind = @ldap_bind ($connect, $auth_user_name, $password);
+	} else {
+		$bind = @ldap_bind
+			(
+				$connect,
+				$LDAP_options['search_bind_rdn'],
+				isset ($LDAP_options['search_bind_password']) ? $LDAP_options['search_bind_password'] : NULL
+			);
+	}
 	if ($bind === FALSE)
 		switch (ldap_errno ($connect))
 		{
