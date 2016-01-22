@@ -2072,7 +2072,7 @@ $iftable_processors['brocade-icx-64xx-1000T'] = array
 $iftable_processors['catalyst-stack-any-StackWise'] = array
 (
 	'pattern' => '@^StackSub-St(\d+)-(\d+)$@',
-	'replacement' => 'St\\1-\\2',
+	'replacement' => 'st\\1-\\2',
 	'dict_key' => '1-440', # Unknown interface type
 	'label' => 'unit \\1 port \\2',
 	'try_next_proc' => FALSE,
@@ -2080,11 +2080,11 @@ $iftable_processors['catalyst-stack-any-StackWise'] = array
 
 $iftable_processors['cisco-chassis-any-1000T'] = array
 (
-        'pattern' => '@^GigabitEthernet([[:digit:]]+/)?([[:digit:]]+)$@',
-        'replacement' => 'gi\\1\\2',
-        'dict_key' => 24,
-        'label' => '\\2X',
-        'try_next_proc' => FALSE,
+	'pattern' => '@^GigabitEthernet([[:digit:]]+/)?([[:digit:]]+)$@',
+	'replacement' => 'gi\\1\\2',
+	'dict_key' => 24,
+	'label' => '\\2X',
+	'try_next_proc' => FALSE,
 );
 
 global $known_switches;
@@ -3989,10 +3989,10 @@ $known_switches = array // key is system OID w/o "enterprises" prefix
 		'text' => 'IBM System Networking RackSwitch G8000',
 		'processors' => array ('ibm-45-to-48-SFP','ibm-49-to-52-SFP+','ibm-any-1000T'),
 	),
-        '9.1.1745' => array
-        (
-                'dict_key' => 2190,
-                'text' => 'Cisco Catalyst WS-C3850-48T',
+	'9.1.1745' => array
+	(
+		'dict_key' => 2190,
+		'text' => 'Cisco Catalyst WS-C3850-48T',
 		  'processors' => array
 		  (
 			   'catalyst-stack-uplinks-10000SFP+',
@@ -4000,15 +4000,38 @@ $known_switches = array // key is system OID w/o "enterprises" prefix
 			   'catalyst-stack-any-StackWise',
 		  ),
 	 ),
-        '9.1.1044' => array
-        (
-                'dict_key' => 1329,
-                'text' => 'Cisco 2921/K9',
+	'9.1.1044' => array
+	(
+		'dict_key' => 1329,
+		'text' => 'Cisco 2921/K9 Router',
 		  'processors' => array
 		  (
 			   'cisco-chassis-any-1000T',
 		  ),
 	 ),
+	'9.1.516' => array
+	(
+		'dict_key' => 1581, # ???
+		'text' => 'WS-C3750X-24T: 24 RJ-45/10-100-1000TX + 4 SFP/1000 + 4 StackWise',
+		'processors' => array
+		(
+			'catalyst-stack-25-to-28-SFP',
+			'catalyst-stack-any-1000T',
+			'catalyst-stack-any-StackWise',
+		),
+	),
+	'9.1.1751' => array
+	(
+		'dict_key' => 1590,
+		'text' => 'WS-C2960+48TC-L: 48 RJ-45/10-100TX + 2 combo-gig',
+		'processors' => array ('catalyst-chassis-1-to-2-combo-1000SFP', 'catalyst-chassis-any-1000T', 'catalyst-chassis-any-100TX'),
+	),
+	'9.1.1226' => array
+	(
+		'dict_key' => 2177,
+		'text' => 'Cisco WS-C3560X-24T-L: 24 RJ-45/10-100-1000T(X) + 4 SFP/1000 + 2 SFP/10000',
+		'processors' => array ('catalyst-chassis-any-1000SFP', 'catalyst-chassis-any-1000T'),
+	),
 
 );
 
