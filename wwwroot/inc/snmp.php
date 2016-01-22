@@ -2078,6 +2078,15 @@ $iftable_processors['catalyst-stack-any-StackWise'] = array
 	'try_next_proc' => FALSE,
 );
 
+$iftable_processors['cisco-chassis-any-1000T'] = array
+(
+        'pattern' => '@^GigabitEthernet([[:digit:]]+/)?([[:digit:]]+)$@',
+        'replacement' => 'gi\\1\\2',
+        'dict_key' => 24,
+        'label' => '\\2X',
+        'try_next_proc' => FALSE,
+);
+
 global $known_switches;
 $known_switches = array // key is system OID w/o "enterprises" prefix
 (
@@ -3989,6 +3998,15 @@ $known_switches = array // key is system OID w/o "enterprises" prefix
 			   'catalyst-stack-uplinks-10000SFP+',
 			   'catalyst-stack-any-1000T',
 			   'catalyst-stack-any-StackWise',
+		  ),
+	 ),
+        '9.1.1044' => array
+        (
+                'dict_key' => 1329,
+                'text' => 'Cisco 2921/K9',
+		  'processors' => array
+		  (
+			   'cisco-chassis-any-1000T',
 		  ),
 	 ),
 
