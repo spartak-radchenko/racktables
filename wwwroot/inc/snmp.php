@@ -4009,6 +4009,15 @@ $known_switches = array // key is system OID w/o "enterprises" prefix
 			   'cisco-chassis-any-1000T',
 		  ),
 	 ),
+	'9.1.1046' => array
+	(
+		'dict_key' => 1327,
+		'text' => 'Cisco 2901 Router',
+		  'processors' => array
+		  (
+			   'cisco-chassis-any-1000T',
+		  ),
+	 ),
 	'9.1.516' => array
 	(
 		'dict_key' => 1581, # ???
