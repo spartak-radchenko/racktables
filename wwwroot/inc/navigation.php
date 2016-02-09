@@ -649,11 +649,15 @@ $page['tagtree']['title'] = 'Tag tree';
 $page['tagtree']['parent'] = 'config';
 $tab['tagtree']['default'] = 'View';
 $tab['tagtree']['edit'] = 'Edit';
+$tab['tagtree']['resolve'] = 'Circular references';
 $tabhandler['tagtree']['default'] = 'renderTagTree';
 $tabhandler['tagtree']['edit'] = 'renderTagTreeEditor';
+$tabhandler['tagtree']['resolve'] = 'renderGraphCycleResolver';
 $ophandler['tagtree']['edit']['createTag'] = 'tableHandler';
 $ophandler['tagtree']['edit']['destroyTag'] = 'tableHandler';
 $ophandler['tagtree']['edit']['updateTag'] = 'updateTag';
+$ophandler['tagtree']['resolve']['updateTag'] = 'updateTag';
+$trigger['tagtree']['resolve'] = 'triggerGraphCycleResolver';
 $interface_requires['tagtree-*'] = 'interface-config.php';
 
 $page['myaccount']['title'] = 'My account';
@@ -884,7 +888,7 @@ $ophandler['cables']['amount']['inc'] = 'replenishPatchCable';
 $ophandler['cables']['amount']['set'] = 'setPatchCableAmount';
 $interface_requires['cables-*'] = 'interface-cables.php';
 
-$ajaxhandler['get-tag-select'] = 'getTagSelectAJAX';
+$ajaxhandler['get-parent-node-options'] = 'getParentNodeOptionsAJAX';
 $ajaxhandler['get-location-select'] = 'getLocationSelectAJAX';
 $ajaxhandler['verifyCode'] = 'verifyCodeAJAX';
 $ajaxhandler['get-port-link'] = 'getPortInfoAJAX';

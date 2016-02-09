@@ -639,7 +639,8 @@ function applyRackProblemMask (&$rackData)
 			}
 }
 
-// This function highlights specified object (and removes previous highlight).
+// This function highlights specified object by amending the
+// 'hl' suffix of the class name.
 function highlightObject (&$rackData, $object_id)
 {
 	// Also highlight parent objects
@@ -655,7 +656,7 @@ function highlightObject (&$rackData, $object_id)
 				$atom['state'] == 'T' and
 				($atom['object_id'] == $object_id or isset ($parents[$atom['object_id']]))
 			)
-				$atom['hl'] = 'h';
+				$atom['hl'] = 'h' . $atom['hl'];
 		}
 }
 
@@ -1316,6 +1317,57 @@ function peekNode ($tree, $trace, $target_id)
 	throw new RackTablesError ('inconsistent tree data', RackTablesError::INTERNAL);
 }
 
+// The structure used in RackTables to represent tags is called a forest of rooted
+// trees, which is a set of directed graphs each having a node appointed as root
+// and exactly one path possible from the root node to every other node of the
+// graph.
+//
+// The TagTree database table contains a generic list of graph nodes with each node
+// having an optional incoming directed edge from any existing node. This table
+// generally can encode any set of any directed graphs that allow at most one
+// incoming edge per node. This includes but is not limited to the forest of rooted
+// trees. However, a number of RackTables functions specifically relies upon
+// consistent relations between the tags (presented either as a complete forest
+// structure or just as each node's path from the root), hence an early validation
+// step is required in the PHP code to implement the constraints in full.
+//
+// The function below implements this step. For every node on the input list that
+// belongs to a forest of rooted trees it sets the 'trace' key to the sequence of
+// node IDs that leads from tree root up to (but not including) the node. As an
+// edge case, for each root node it sets this sequence to an empty list. For any
+// nodes not in the forest (i.e., those that form any graph cycle or descend from
+// such a cycle) it leaves 'trace' unset.
+function addTraceToNodes ($nodelist)
+{
+	foreach ($nodelist as $nodeid => $node)
+	{
+		$trace = array();
+		$parentid = $node['parent_id'];
+		while ($parentid != NULL)
+		{
+			if (! isset ($nodelist[$parentid]))
+			{
+				// bad parent_id
+				$trace = NULL;
+				break;
+			}
+
+			// check for cycles every 10 steps
+			if (0 == (count ($trace) % 10) and in_array ($parentid, $trace))
+			{
+				// cycle detected
+				$trace = NULL;
+				break;
+			}
+			array_unshift ($trace, $parentid);
+			$parentid = $nodelist[$parentid]['parent_id'];
+		}
+		if (isset ($trace))
+			$nodelist[$nodeid]['trace'] = $trace;
+	}
+	return $nodelist;
+}
+
 function treeItemCmp ($a, $b)
 {
 	return $a['__tree_index'] - $b['__tree_index'];
@@ -1331,71 +1383,112 @@ function getTagTree()
 // key, which is in turn indexed by id. Functions that are ready to handle
 // tree collapsion/expansion themselves may request non-zero threshold value
 // for smaller resulting tree.
-function treeFromList (&$orig_nodelist, $threshold = 0, $return_main_payload = TRUE)
+// FIXME: The 2nd argument to this function seems not to be used any more.
+// FIXME: The structure this function returns is a forest of rooted trees
+//        despite the terminology it used to use.
+function treeFromList ($nodelist, $threshold = 0)
 {
 	$tree = array();
-	$nodelist = $orig_nodelist;
 
-	// index the tree items by their order in $orig_nodelist
+	// Preserve original ordering in __tree_index.
 	$ti = 0;
-	foreach ($nodelist as &$node_ref)
+	foreach (array_keys ($nodelist) as $key)
 	{
-		$node_ref['__tree_index'] = $ti++;
-		$node_ref['kidc'] = 0;
-		$node_ref['kids'] = array();
+		$nodelist[$key]['__tree_index'] = $ti++;
+		$nodelist[$key]['kidc'] = 0;
+		$nodelist[$key]['kids'] = array();
 	}
 
-	// Array equivalent of traceEntity() function.
-	$trace = array();
+	$done_ids = array();
 	do
 	{
 		$nextpass = FALSE;
 		foreach (array_keys ($nodelist) as $nodeid)
 		{
 			$node = $nodelist[$nodeid];
+			// Skip any irrelevant nodes early as they will fail the checks below anyway.
+			if (! array_key_exists ('trace', $node))
+				continue;
 			$parentid = $node['parent_id'];
-			// When adding a node to the working tree, book another
-			// iteration, because the new item could make a way for
-			// others onto the tree. Also remove any item added from
-			// the input list, so iteration base shrinks.
-			// First check if we can assign directly.
-			if ($parentid == NULL)
+			// Moving a node from the input list to the output tree potentially enables more
+			// nodes to make it from the list to the same tree as well, hence in this case make
+			// another full round after the current one.
+
+			if ($parentid == NULL) // A root node?
 			{
 				$tree[$nodeid] = $node;
-				$trace[$nodeid] = array(); // Trace to root node is empty
 				unset ($nodelist[$nodeid]);
+				$done_ids[] = $nodeid;
 				$nextpass = TRUE;
 			}
-			// Now look if it fits somewhere on already built tree.
-			elseif (isset ($trace[$parentid]))
+			elseif (in_array ($parentid, $done_ids)) // Has a direct parent node already on the tree?
 			{
-				// Trace to a node is a trace to its parent plus parent id.
-				$trace[$nodeid] = $trace[$parentid];
-				$trace[$nodeid][] = $parentid;
-				pokeNode ($tree, $trace[$nodeid], $nodeid, $node, $threshold);
-				// path to any other node is made of all parent nodes plus the added node itself
+				// Being here implies the current node's trace is at least one element long.
+				pokeNode ($tree, $node['trace'], $nodeid, $node, $threshold);
 				unset ($nodelist[$nodeid]);
+				$done_ids[] = $nodeid;
 				$nextpass = TRUE;
 			}
 		}
 	}
 	while ($nextpass);
-	if (!$return_main_payload)
-		return $nodelist;
-	// update each input node with its backtrace route
-	foreach ($trace as $nodeid => $route)
-		$orig_nodelist[$nodeid]['trace'] = $route;
 	sortTree ($tree, 'treeItemCmp'); // sort the resulting tree by the order in original list
 	return $tree;
 }
 
-// Build a tree from the tag list and return everything _except_ the tree.
-// IOW, return taginfo items that have parent_id set and pointing outside
-// of the "normal" tree, which originates from the root.
-function getOrphanedTags ()
+// Return those tags that belong to the full list of tags but don't belong
+// to the forest of rooted trees as found by addTraceToNodes().
+function getInvalidNodes ($nodelist)
 {
-	global $taglist;
-	return treeFromList ($taglist, 0, FALSE);
+	$ret = array();
+	foreach ($nodelist as $node_id => $node)
+		if (! array_key_exists ('trace', $node))
+			$ret[$node_id] = $node;
+	return $ret;
+}
+
+// Throw an exception unless it is OK to assign the given parent ID
+// to the node with the given ID.
+function assertValidParentId ($nodelist, $node_id, $parent_id)
+{
+	if ($parent_id == 0)
+		return;
+	if ($parent_id == $node_id)
+		throw new InvalidArgException ('parent_id', $parent_id, 'must be different from the tag ID');
+	if (! array_key_exists ($parent_id, $nodelist))
+		throw new InvalidArgException ('parent_id', $parent_id, 'must refer to an existing tag');
+	if (! array_key_exists ('trace', $nodelist[$parent_id]))
+		throw new InvalidArgException ('parent_id', $parent_id, 'would add to an existing graph cycle');
+	if (in_array ($node_id, $nodelist[$parent_id]['trace']))
+		throw new InvalidArgException ('parent_id', $parent_id, 'would create a new graph cycle');
+}
+
+// Given an existing node ID filter a list of traced nodes and silently skip
+// the nodes that are not valid parent node options. Filtering criteria are
+// effectively the same as in the function above but use a simpler expression.
+function getParentNodeOptionsExisting ($nodelist, $textfield, $node_id)
+{
+	$ret = array (0 => '-- NONE --');
+	foreach ($nodelist as $key => $each)
+		if
+		(
+			$key != $node_id &&
+			array_key_exists ('trace', $each) &&
+			! in_array ($node_id, $each['trace'])
+		)
+			$ret[$key] = $each[$textfield];
+	return $ret;
+}
+
+// Idem, but for a new node, which doesn't yet exist, or a node that is based
+// on a circular reference. The condition is even simpler in this case.
+function getParentNodeOptionsNew ($nodelist, $textfield)
+{
+	$ret = array (0 => '-- NONE --');
+	foreach ($nodelist as $key => $each)
+		if (array_key_exists ('trace', $each))
+			$ret[$key] = $each[$textfield];
+	return $ret;
 }
 
 // removes implicit tags from ['etags'] array and fills ['itags'] array
@@ -1457,18 +1550,12 @@ function tagOnChain ($taginfo, $tagchain)
 {
 	if (!isset ($taginfo['id']))
 		return FALSE;
-	foreach ($tagchain as $test)
-		if ($test['id'] == $taginfo['id'])
-			return TRUE;
-	return FALSE;
+	return scanArrayForItem ($tagchain, 'id', $taginfo['id']) === NULL ? FALSE : TRUE;
 }
 
 function tagNameOnChain ($tagname, $tagchain)
 {
-	foreach ($tagchain as $test)
-		if ($test['tag'] == $tagname)
-			return TRUE;
-	return FALSE;
+	return scanArrayForItem ($tagchain, 'tag', $tagname) === NULL ? FALSE : TRUE;
 }
 
 // Return TRUE, if two tags chains differ (order of tags doesn't matter).
@@ -1490,7 +1577,7 @@ function getTagDescendents ($tagid)
 	global $taglist;
 	$ret = array();
 	foreach ($taglist as $id => $taginfo)
-		if (in_array($tagid, $taginfo['trace']))
+		if (array_key_exists ('trace', $taginfo) && in_array ($tagid, $taginfo['trace']))
 			$ret[] = $id;
 	return $ret;
 }
@@ -1763,6 +1850,7 @@ function mergeTagChains ($chainA, $chainB)
 
 # Return a list consisting of tag ID of the given tree node and IDs of all
 # nodes it contains.
+# This is an earlier and more generic variety of getTagDescendents().
 function getTagIDListForNode ($treenode)
 {
 	$self = __FUNCTION__;
@@ -2659,7 +2747,7 @@ function makeIPTree ($netlist)
 	}
 	unset ($stack);
 
-	return treeFromList ($netlist);
+	return treeFromList (addTraceToNodes ($netlist));
 }
 
 function prepareIPTree ($netlist, $expanded_id = 0)
@@ -3041,10 +3129,7 @@ function scanRealmByText ($realm, $ftext = '')
 
 function getVSTOptions()
 {
-	$ret = array();
-	foreach (listCells ('vst') as $vst)
-		$ret[$vst['id']] = stringForOption ($vst['description']);
-	return $ret;
+	return reduceSubarraysToColumn (reindexById (listCells ('vst')), 'description');
 }
 
 # Return an array in the format understood by getNiftySelect() and getOptionTree(),
@@ -3259,7 +3344,7 @@ function formatVLANAsOption ($vlaninfo)
 {
 	$ret = $vlaninfo['vlan_id'];
 	if ($vlaninfo['vlan_descr'] != '')
-		$ret .= ' ' . niftyString ($vlaninfo['vlan_descr']);
+		$ret .= ' ' . $vlaninfo['vlan_descr'];
 	return $ret;
 }
 
@@ -3335,6 +3420,8 @@ function scanArrayForItem ($table, $scan_column, $scan_value)
 
 // Return TRUE, if every value of A1 is present in A2 and vice versa,
 // regardless of each array's sort order and indexing.
+// Any duplicate values in either of the arguments would be treated same
+// as a single occurrence, IOW, there is an implicit array_unique() here.
 function array_values_same ($a1, $a2)
 {
 	return !count (array_diff ($a1, $a2)) and !count (array_diff ($a2, $a1));
@@ -3367,6 +3454,8 @@ function reindexById ($input, $column_name = 'id', $ignore_dups = FALSE)
 # provided subindex name, e.g.:
 # array (10 => array ('a' => 'x1', 'b' => 'y1'), 20 => array ('a' => 'x2', 'b' => 'y2'))
 # would map to (using subindex 'b'): array (10 => 'y1', 20 => 'y2')
+#
+# A similar array_column() function is available in PHP 5 >= 5.5.0.
 function reduceSubarraysToColumn ($input, $column)
 {
 	$ret = array();
@@ -3389,13 +3478,18 @@ function apply8021QOrder ($vswitch, $portlist)
 	$vst_id = $vswitch['template_id'];
 	$vst = spotEntity ('vst', $vswitch['template_id']);
 	amplifyCell ($vst);
+
+	// warm the vlan_filter cache for every rule
+	foreach ($vst['rules'] as $i_rule => $rule)
+		$vst['rules'][$i_rule]['vlan_filter'] = buildVLANFilter ($rule['port_role'], $rule['wrt_vlans']);
+
 	foreach (array_keys ($portlist) as $port_name)
 	{
 		foreach ($vst['rules'] as $rule)
 			if (preg_match ($rule['port_pcre'], $port_name))
 			{
 				$portlist[$port_name]['vst_role'] = $rule['port_role'];
-				$portlist[$port_name]['wrt_vlans'] = buildVLANFilter ($rule['port_role'], $rule['wrt_vlans']);
+				$portlist[$port_name]['wrt_vlans'] = $rule['vlan_filter'];
 				continue 2;
 			}
 		$portlist[$port_name]['vst_role'] = 'none';
@@ -3477,6 +3571,15 @@ function matchVLANFilter ($vlan_id, $vfilter)
 		if ($range['from'] <= $vlan_id and $vlan_id <= $range['to'])
 			return TRUE;
 	return FALSE;
+}
+
+function filterVLANList ($vlan_list, $vfilter)
+{
+	$ret = array();
+	foreach ($vlan_list as $vid)
+		if (matchVLANFilter ($vid, $vfilter))
+			$ret[] = $vid;
+	return $ret;
 }
 
 function generate8021QDeployOps ($vswitch, $device_vlanlist, $before, $changes)
@@ -3896,28 +3999,25 @@ function produceUplinkPorts ($domain_vlanlist, $portlist, $object_id)
 {
 	$ret = array();
 
-	$employed = getEmployedVlans ($object_id, $domain_vlanlist);
+	$employed = array();
+	foreach (getEmployedVlans ($object_id, $domain_vlanlist) as $vlan_id)
+		$employed[$vlan_id] = $vlan_id;
+
 	foreach ($portlist as $port_name => $port)
 		if ($port['vst_role'] != 'uplink')
 			foreach ($port['allowed'] as $vlan_id)
-				if (array_key_exists ($vlan_id, $domain_vlanlist) && !in_array ($vlan_id, $employed))
-					$employed[] = $vlan_id;
+				if (! isset ($employed[$vlan_id]) && isset ($domain_vlanlist[$vlan_id]))
+					$employed[$vlan_id] = $vlan_id;
 
 	foreach ($portlist as $port_name => $port)
 		if ($port['vst_role'] == 'uplink')
-		{
-			$employed_here = array();
-			foreach ($employed as $vlan_id)
-				if (matchVLANFilter ($vlan_id, $port['wrt_vlans']))
-					$employed_here[] = $vlan_id;
 			$ret[$port_name] = array
 			(
 				'vst_role' => 'uplink',
 				'mode' => 'trunk',
-				'allowed' => $employed_here,
+				'allowed' => filterVLANList ($employed, $port['wrt_vlans']),
 				'native' => 0,
 			);
-		}
 	return $ret;
 }
 
@@ -4268,20 +4368,13 @@ function saveDownlinksReverb ($object_id, $requested_changes)
 	// first filter by wrt_vlans constraint
 	foreach ($requested_changes as $pn => $requested)
 		if (array_key_exists ($pn, $before) and $requested['vst_role'] == 'downlink')
-		{
-			$negotiated = array
+			$changes_to_save[$pn] = array
 			(
 				'vst_role' => 'downlink',
 				'mode' => 'trunk',
-				'allowed' => array(),
+				'allowed' => filterVLANList ($requested['allowed'], $requested['wrt_vlans']),
 				'native' => 0,
 			);
-			// wrt_vlans filter
-			foreach ($requested['allowed'] as $vlan_id)
-				if (matchVLANFilter ($vlan_id, $requested['wrt_vlans']))
-					$negotiated['allowed'][] = $vlan_id;
-			$changes_to_save[$pn] = $negotiated;
-		}
 	// immune VLANs filter
 	foreach (filter8021QChangeRequests ($domain_vlanlist, $before, $changes_to_save) as $pn => $finalconfig)
 		$nsaved += upd8021QPort ('desired', $vswitch['object_id'], $pn, $finalconfig, $before[$pn]);
@@ -4299,7 +4392,7 @@ function initiateUplinksReverb ($object_id, $uplink_ports)
 	// Filter and regroup all requests (regardless of how many will succeed)
 	// to end up with no more, than one execution per remote object.
 	$upstream_config = array();
-	foreach (getObjectPortsAndLinks ($object_id) as $portinfo)
+	foreach (getObjectPortsAndLinks ($object_id, FALSE) as $portinfo)
 		if
 		(
 			$portinfo['linked'] and
@@ -4345,7 +4438,7 @@ function recalc8021QPorts ($switch_id)
 		return $ret;
 
 	$ports = array(); // only linked ports appear here
-	foreach (getObjectPortsAndLinks ($switch_id) as $portinfo)
+	foreach (getObjectPortsAndLinks ($switch_id, FALSE) as $portinfo)
 		if ($portinfo['linked'])
 			$ports[$portinfo['name']] = $portinfo;
 
@@ -4393,13 +4486,8 @@ function produceDownlinkPort ($domain_vlanlist, $portname, $order, $uplink_order
 {
 	$new_order = array ($portname => $order[$portname]);
 	$new_order[$portname]['mode'] = 'trunk';
-	$new_order[$portname]['allowed'] = array();
+	$new_order[$portname]['allowed'] = filterVLANList ($uplink_order['allowed'], $new_order[$portname]['wrt_vlans']);
 	$new_order[$portname]['native'] = 0;
-	foreach ($uplink_order['allowed'] as $vlan_id)
-	{
-		if (matchVLANFilter ($vlan_id, $new_order[$portname]['wrt_vlans']))
-		$new_order[$portname]['allowed'][] = $vlan_id;
-	}
 	return filter8021QChangeRequests ($domain_vlanlist, $order, $new_order);
 }
 
@@ -4559,7 +4647,7 @@ function compareDecomposedPortNames ($porta, $portb)
 {
 	$ret = 0;
 
-	$prefix_diff = numSign (strcmp ($porta['prefix'], $portb['prefix']));
+	$prefix_diff = strcmp ($porta['prefix'], $portb['prefix']);
 
 	// concatenation of 0..(n-1) numeric indices
 	$a_parent = $porta['idx_parent'];
@@ -4575,7 +4663,7 @@ function compareDecomposedPortNames ($porta, $portb)
 		}
 		if ($porta['index'][$i] != $portb['index'][$i])
 		{
-			$index_diff = numCompare ($porta['index'][$i], $portb['index'][$i]);
+			$index_diff = $porta['index'][$i] - $portb['index'][$i];
 			break;
 		}
 	}
@@ -4585,7 +4673,7 @@ function compareDecomposedPortNames ($porta, $portb)
 	// compare by portname fields
 	if ($prefix_diff != 0 and ($porta['numidx'] <= 1 or $portb['numidx'] <= 1)) // if index count is lte 1, sort by prefix
 	{
-		$ret = numCompare($porta['numidx'], $portb['numidx']);
+		$ret = $porta['numidx'] - $portb['numidx'];
 		if ($ret == 0)
 			$ret = $prefix_diff;
 	}
@@ -4597,15 +4685,15 @@ function compareDecomposedPortNames ($porta, $portb)
 		$ret = $index_diff;
 	// if all of name fields are equal, compare by some additional port fields
 	elseif ($porta['iif_id'] != $portb['iif_id'])
-		$ret = numCompare ($porta['iif_id'], $portb['iif_id']);
+		$ret = $porta['iif_id'] - $portb['iif_id'];
 	elseif (0 != $result = strcmp ($porta['label'], $portb['label']))
-		$ret = numSign ($result);
+		$ret = $result;
 	elseif (0 != $result = strcmp ($porta['l2address'], $portb['l2address']))
-		$ret = numSign ($result);
+		$ret = $result;
 	elseif ($porta['id'] != $portb['id'])
-		$ret = numCompare ($porta['id'], $portb['id']);
+		$ret = $porta['id'] - $portb['id'];
 
-	return $ret;
+	return ($ret > 0) - ($ret < 0);
 }
 
 // Sort provided port list in a way based on natural. For example,
@@ -5855,47 +5943,42 @@ function sameDomains ($domain_id_1, $domain_id_2)
 
 // Checks if 802.1Q port uplink/downlink feature is misconfigured.
 // Returns FALSE if 802.1Q port role/linking is wrong, TRUE otherwise.
-function checkPortRole ($vswitch, $port_name, $port_order)
+function checkPortRole ($vswitch, $portinfo, $port_name, $port_order)
 {
-	static $links_cache = array();
-	if (! isset ($links_cache[$vswitch['object_id']]))
-		$links_cache = array ($vswitch['object_id'] => getObjectPortsAndLinks ($vswitch['object_id']));
+	if (! $portinfo || ! $portinfo['linked'])
+		return TRUE; // not linked port
+
+
+	// find linked port with the same name
+	if ($port_name != $portinfo['name'])
+		return FALSE; // typo in local port name
 
 	$local_auto = ($port_order['vst_role'] == 'uplink' || $port_order['vst_role'] == 'downlink') ?
 		$port_order['vst_role'] :
 		FALSE;
+	$remote_vswitch = getVLANSwitchInfo ($portinfo['remote_object_id']);
+	if (! $remote_vswitch)
+		return ! $local_auto;
 
-	// find linked port with the same name
-	foreach ($links_cache[$vswitch['object_id']] as $portinfo)
-		if ($portinfo['linked'] && shortenIfName ($portinfo['name'], NULL, $portinfo['object_id']) == $port_name)
-		{
-			if ($port_name != $portinfo['name'])
-				return FALSE; // typo in local port name
-			$remote_vswitch = getVLANSwitchInfo ($portinfo['remote_object_id']);
-			if (! $remote_vswitch)
-				return ! $local_auto;
+	$remote_pn = $portinfo['remote_name'];
+	$remote_ports = apply8021QOrder ($remote_vswitch, getStored8021QConfig ($remote_vswitch['object_id'], 'desired', array ($remote_pn)));
+	if (! array_key_exists($remote_pn, $remote_ports))
+		// linked auto-port must have corresponding remote 802.1Q port
+		return
+			! $local_auto &&
+			! isset ($remote_ports[shortenIfName ($remote_pn, NULL, $portinfo['remote_object_id'])]); // typo in remote port name
+	$remote = $remote_ports[$remote_pn];
 
-			$remote_pn = $portinfo['remote_name'];
-			$remote_ports = apply8021QOrder ($remote_vswitch, getStored8021QConfig ($remote_vswitch['object_id'], 'desired', array ($remote_pn)));
-			if (! array_key_exists($remote_pn, $remote_ports))
-				// linked auto-port must have corresponding remote 802.1Q port
-				return
-					! $local_auto &&
-					! isset ($remote_ports[shortenIfName ($remote_pn, NULL, $portinfo['remote_object_id'])]); // typo in remote port name
-			$remote = $remote_ports[$remote_pn];
+	$remote_auto = ($remote['vst_role'] == 'uplink' || $remote['vst_role'] == 'downlink') ?
+		$remote['vst_role'] :
+		FALSE;
 
-			$remote_auto = ($remote['vst_role'] == 'uplink' || $remote['vst_role'] == 'downlink') ?
-				$remote['vst_role'] :
-				FALSE;
-
-			if (! $remote_auto && ! $local_auto)
-				return TRUE;
-			elseif ($remote_auto && $local_auto && $local_auto != $remote_auto && sameDomains ($vswitch['domain_id'], $remote_vswitch['domain_id']))
-				return TRUE; // auto-calc link ends must belong to the same domain
-			else
-				return FALSE;
-		}
-	return TRUE; // not linked port
+	if (! $remote_auto && ! $local_auto)
+		return TRUE;
+	elseif ($remote_auto && $local_auto && $local_auto != $remote_auto && sameDomains ($vswitch['domain_id'], $remote_vswitch['domain_id']))
+		return TRUE; // auto-calc link ends must belong to the same domain
+	else
+		return FALSE;
 }
 
 # Convert InvalidArgException to InvalidRequestArgException with a choice of
@@ -5963,9 +6046,25 @@ function checkTypeAndAttribute ($object_id, $type_id, $attr_id, $values)
 	return FALSE;
 }
 
+// The old name, remove at a later point.
 function nullEmptyStr ($str)
 {
-	return strlen ($str) ? $str : NULL;
+	return nullIfEmptyStr ($str);
+}
+
+function nullIfEmptyStr ($str)
+{
+	return $str != '' ? $str : NULL;
+}
+
+function nullIfFalse ($x)
+{
+	return $x === FALSE ? NULL : $x;
+}
+
+function nullIfZero ($x)
+{
+	return $x == 0 ? NULL : $x;
 }
 
 function printLocationChildrenSelectOptions ($location, $parent_id, $location_id = NULL, $level = 0)
@@ -6115,7 +6214,7 @@ function formatPatchCableHeapAsPlainText ($heap)
 	$text = "${heap['amount']} pcs: [${heap['end1_connector']}] ${heap['pctype']} [${heap['end2_connector']}]";
 	if ($heap['description'] != '')
 		$text .=  " (${heap['description']})";
-	return niftyString ($text, 512);
+	return niftyString ($text, 512, FALSE);
 }
 
 // takes a list of structures and the field name in those structures.

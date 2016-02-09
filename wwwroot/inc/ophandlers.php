@@ -156,9 +156,9 @@ $opspec_list['object-editrspvs-updLB'] = array
 	'action' => 'UPDATE',
 	'set_arglist' => array
 	(
-		array ('url_argname' => 'vsconfig', 'assertion' => 'string0', 'if_empty' => 'NULL'),
-		array ('url_argname' => 'rsconfig', 'assertion' => 'string0', 'if_empty' => 'NULL'),
-		array ('url_argname' => 'prio', 'assertion' => 'string0', 'if_empty' => 'NULL'),
+		array ('url_argname' => 'vsconfig', 'assertion' => 'string0', 'translator' => 'nullIfEmptyStr'),
+		array ('url_argname' => 'rsconfig', 'assertion' => 'string0', 'translator' => 'nullIfEmptyStr'),
+		array ('url_argname' => 'prio', 'assertion' => 'string0', 'translator' => 'nullIfEmptyStr'),
 	),
 	'where_arglist' => array
 	(
@@ -391,7 +391,7 @@ $opspec_list['tagtree-edit-createTag'] = array
 	'arglist' => array
 	(
 		array ('url_argname' => 'tag_name', 'table_colname' => 'tag', 'assertion' => 'tag'),
-		array ('url_argname' => 'parent_id', 'assertion' => 'uint0', 'if_empty' => 'NULL'),
+		array ('url_argname' => 'parent_id', 'assertion' => 'uint0', 'translator' => 'nullIfZero'),
 		array ('url_argname' => 'is_assignable', 'assertion' => 'enum/yesno'),
 	),
 );
@@ -456,7 +456,7 @@ $opspec_list['vlandomain-vlanlist-add'] = array
 		array ('url_argname' => 'vdom_id', 'table_colname' => 'domain_id', 'assertion' => 'uint'),
 		array ('url_argname' => 'vlan_id', 'assertion' => 'vlan'),
 		array ('url_argname' => 'vlan_type', 'assertion' => 'enum/vlan_type'),
-		array ('url_argname' => 'vlan_descr', 'assertion' => 'string0', 'if_empty' => 'NULL'),
+		array ('url_argname' => 'vlan_descr', 'assertion' => 'string0', 'translator' => 'nullIfEmptyStr'),
 	),
 );
 $opspec_list['vlandomain-vlanlist-del'] = array
@@ -477,7 +477,7 @@ $opspec_list['vlandomain-vlanlist-upd'] = array
 	'set_arglist' => array
 	(
 		array ('url_argname' => 'vlan_type', 'assertion' => 'enum/vlan_type'),
-		array ('url_argname' => 'vlan_descr', 'assertion' => 'string0', 'if_empty' => 'NULL'),
+		array ('url_argname' => 'vlan_descr', 'assertion' => 'string0', 'translator' => 'nullIfEmptyStr'),
 	),
 	'where_arglist' => array
 	(
@@ -1245,8 +1245,8 @@ function updateObjectAllocation ()
 		}
 	}
 
-	foreach ($workingRacksData as &$rd)
-		applyObjectMountMask ($rd, $object_id);
+	foreach (array_keys ($workingRacksData) as $key)
+		applyObjectMountMask ($workingRacksData[$key], $object_id);
 
 	$oldMolecule = getMoleculeForObject ($object_id);
 	foreach ($workingRacksData as $rack_id => $rackData)
@@ -1604,7 +1604,7 @@ function resetUIConfig()
 		'TAGS_QUICKLIST_THRESHOLD' => '50',
 		'ENABLE_MULTIPORT_FORM' => 'no',
 		'DEFAULT_PORT_IIF_ID' => '1',
-		'DEFAULT_PORT_OIF_IDS' => '1=24; 3=1078; 4=1077; 5=1079; 6=1080; 8=1082; 9=1084; 10=1588; 11=1668',
+		'DEFAULT_PORT_OIF_IDS' => '1=24; 3=1078; 4=1077; 5=1079; 6=1080; 8=1082; 9=1084; 10=1588; 11=1668; 12=1589; 13=1590; 14=1591',
 		'IPV4_TREE_RTR_AS_CELL' => 'no',
 		'PROXIMITY_RANGE' => '0',
 		'IPV4_TREE_SHOW_VLAN' => 'yes',
@@ -1738,9 +1738,9 @@ function addVService ()
 			'vip' => $vip_bin,
 			'vport' => $vport,
 			'proto' => $_REQUEST['proto'],
-			'name' => !mb_strlen ($_REQUEST['name']) ? NULL : $_REQUEST['name'],
-			'vsconfig' => !strlen ($sic['vsconfig']) ? NULL : $sic['vsconfig'],
-			'rsconfig' => !strlen ($sic['rsconfig']) ? NULL : $sic['rsconfig'],
+			'name' => nullIfEmptyStr ($_REQUEST['name']),
+			'vsconfig' => nullIfEmptyStr ($sic['vsconfig']),
+			'rsconfig' => nullIfEmptyStr ($sic['rsconfig']),
 		)
 	);
 	$vs_id = lastInsertID();
@@ -1859,8 +1859,8 @@ function updateVS ()
 	$taglist = genericAssertion ('taglist', 'array0');
 	$vs_id = assertUIntArg ('vs_id');
 	$name = assertStringArg ('name');
-	$vsconfig = nullEmptyStr (assertStringArg ('vsconfig', TRUE));
-	$rsconfig = nullEmptyStr (assertStringArg ('rsconfig', TRUE));
+	$vsconfig = nullIfEmptyStr (assertStringArg ('vsconfig', TRUE));
+	$rsconfig = nullIfEmptyStr (assertStringArg ('rsconfig', TRUE));
 
 	usePreparedUpdateBlade ('VS', array ('name' => $name, 'vsconfig' => $vsconfig, 'rsconfig' => $rsconfig), array ('id' => $vs_id));
 	rebuildTagChainForEntity ('ipvs', $vs_id, buildTagChainFromIds ($taglist), TRUE);
@@ -1920,8 +1920,8 @@ function updateIPInVS()
 {
 	$vs_id = assertUIntArg ('vs_id');
 	$ip_bin = assertIPArg ('ip');
-	$vsconfig = nullEmptyStr (assertStringArg ('vsconfig', TRUE));
-	$rsconfig = nullEmptyStr (assertStringArg ('rsconfig', TRUE));
+	$vsconfig = nullIfEmptyStr (assertStringArg ('vsconfig', TRUE));
+	$rsconfig = nullIfEmptyStr (assertStringArg ('rsconfig', TRUE));
 	if (usePreparedUpdateBlade ('VSIPs', array ('vsconfig' => $vsconfig, 'rsconfig' => $rsconfig), array ('vs_id' => $vs_id, 'vip' => $ip_bin)))
 		showSuccess ("IP configuration updated");
 	else
@@ -1933,8 +1933,8 @@ function updatePortInVS()
 	$vs_id = assertUIntArg ('vs_id');
 	$proto = assertStringArg ('proto');
 	$vport = assertUIntArg ('port', TRUE);
-	$vsconfig = nullEmptyStr (assertStringArg ('vsconfig', TRUE));
-	$rsconfig = nullEmptyStr (assertStringArg ('rsconfig', TRUE));
+	$vsconfig = nullIfEmptyStr (assertStringArg ('vsconfig', TRUE));
+	$rsconfig = nullIfEmptyStr (assertStringArg ('rsconfig', TRUE));
 	if (usePreparedUpdateBlade ('VSPorts', array ('vsconfig' => $vsconfig, 'rsconfig' => $rsconfig), array ('vs_id' => $vs_id, 'proto' => $proto, 'vport' => $vport)))
 		showSuccess ("Port configuration updated");
 	else
@@ -1981,8 +1981,8 @@ function updateTripletConfig()
 	);
 	$config_fields = array
 	(
-		'vsconfig' => nullEmptyStr (assertStringArg ('vsconfig', TRUE)),
-		'rsconfig' => nullEmptyStr (assertStringArg ('rsconfig', TRUE)),
+		'vsconfig' => nullIfEmptyStr (assertStringArg ('vsconfig', TRUE)),
+		'rsconfig' => nullIfEmptyStr (assertStringArg ('rsconfig', TRUE)),
 	);
 
 	$vsinfo = spotEntity ('ipvs', $key_fields['vs_id']);
@@ -2009,7 +2009,7 @@ function updateTripletConfig()
 	{
 		$table = 'VSEnabledIPs';
 		$vip = assertIPArg ('vip');
-		$config_fields['prio'] = nullEmptyStr (assertStringArg ('prio', TRUE));
+		$config_fields['prio'] = nullIfEmptyStr (assertStringArg ('prio', TRUE));
 		$key_fields['vip'] = $vip;
 		$key = "IP " . ip_format ($vip);
 		// check if such VIP exists in VS
@@ -2219,11 +2219,20 @@ function generateAutoPorts ()
 
 function updateTag ()
 {
-	assertUIntArg ('tag_id');
-	genericAssertion ('tag_name', 'tag');
-	assertUIntArg ('parent_id', TRUE);
-	genericAssertion ('is_assignable', 'enum/yesno');
-	commitUpdateTag ($_REQUEST['tag_id'], $_REQUEST['tag_name'], $_REQUEST['parent_id'], $_REQUEST['is_assignable']);
+	try
+	{
+		commitUpdateTag
+		(
+			genericAssertion ('tag_id', 'uint'),
+			genericAssertion ('tag_name', 'tag'),
+			genericAssertion ('parent_id', 'uint0'),
+			genericAssertion ('is_assignable', 'enum/yesno')
+		);
+	}
+	catch (InvalidArgException $iae)
+	{
+		throw $iae->newIRAE ('parent_id');
+	}
 	showSuccess ('Tag updated successfully');
 }
 
@@ -2619,14 +2628,25 @@ function querySNMPData ()
 // File-related functions
 function addFileWithoutLink ()
 {
-	setFuncMessages (__FUNCTION__, array ('OK' => 5));
+	setFuncMessages (__FUNCTION__, array ('OK' => 5, 'ERR1' => 207));
 	assertStringArg ('comment', TRUE);
 
 	// Make sure the file can be uploaded
 	if (get_cfg_var('file_uploads') != 1)
 		throw new RackTablesError ('file uploads not allowed, change "file_uploads" parameter in php.ini', RackTablesError::MISCONFIGURED);
 
-	$fp = fopen($_FILES['file']['tmp_name'], 'rb');
+	// Exit if the upload failed
+	if ($_FILES['file']['error'])
+	{
+		showFuncMessage (__FUNCTION__, 'ERR1', array ($_FILES['file']['error']));
+		return;
+	}
+	if (FALSE === $fp = fopen($_FILES['file']['tmp_name'], 'rb'))
+	{
+		showFuncMessage (__FUNCTION__, 'ERR1', array ('failed to access the temporary file'));
+		return;
+	}
+
 	global $sic;
 	$file_id = commitAddFile ($_FILES['file']['name'], $_FILES['file']['type'], $fp, $sic['comment']);
 	if (isset ($_REQUEST['taglist']))
@@ -2650,8 +2670,12 @@ function addFileToEntity ()
 		showFuncMessage (__FUNCTION__, 'ERR1', array ($_FILES['file']['error']));
 		return;
 	}
+	if (FALSE === $fp = fopen($_FILES['file']['tmp_name'], 'rb'))
+	{
+		showFuncMessage (__FUNCTION__, 'ERR1', array ('failed to access the temporary file'));
+		return;
+	}
 
-	$fp = fopen($_FILES['file']['tmp_name'], 'rb');
 	global $sic;
 	commitAddFile ($_FILES['file']['name'], $_FILES['file']['type'], $fp, $sic['comment']);
 	usePreparedInsertBlade
@@ -3590,11 +3614,15 @@ function buildOpspecColumns ($opspec, $listname)
 			genericAssertion ($argspec['url_argname'], $argspec['assertion']);
 			// "table_colname" is normally used for an override, if it is not
 			// set, use the URL argument name
-			$table_colname = array_key_exists ('table_colname', $argspec) ?
-				$argspec['table_colname'] :
-				$argspec['url_argname'];
+			$table_colname = array_fetch ($argspec, 'table_colname', $argspec['url_argname']);
 			$arg_value = $sic[$argspec['url_argname']];
-			if
+			if (array_key_exists ('translator', $argspec))
+			{
+				if (! is_callable ($argspec['translator']))
+					throw new RackTablesError ('opspec translator function is not callable', RackTablesError::INTERNAL);
+				$arg_value = $argspec['translator'] ($arg_value);
+			}
+			elseif // FIXME: remove the old declaration style at a later point
 			(
 				($argspec['assertion'] == 'uint0' and $arg_value == 0)
 				or ($argspec['assertion'] == 'string0' and $arg_value == '')
@@ -3767,7 +3795,7 @@ function renameObjectPorts()
 {
 	$object_id = getBypassValue();
 	$n = 0;
-	foreach (getObjectPortsAndLinks ($object_id) as $port)
+	foreach (getObjectPortsAndLinks ($object_id, FALSE) as $port)
 	{
 		$canon_pn = shortenPortName ($port['name'], $port['object_id']);
 		if ($canon_pn != $port['name'])

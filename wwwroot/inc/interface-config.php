@@ -5,15 +5,13 @@
 # licensing information.
 
 // Find direct sub-pages and dump as a list.
-// FIXME: assume all config kids to have static titles at the moment,
-// but use some proper abstract function later.
 function renderConfigMainpage ()
 {
 	global $pageno, $page;
 	echo '<ul>';
 	foreach ($page as $cpageno => $cpage)
 		if (isset ($cpage['parent']) and $cpage['parent'] == $pageno  && permitted($cpageno))
-			echo "<li><a href='index.php?page=${cpageno}'>" . $cpage['title'] . "</li>\n";
+			echo '<li>' . mkA (getTitle ($cpageno), $cpageno) . "</li>\n";
 	echo '</ul>';
 }
 
@@ -156,7 +154,6 @@ ENDJAVASCRIPT
 	echo '<div id="ShowMessage"></div>';
 	echo "<input type='button' value='Verify' onclick='verify();'>";
 	echo "<input type='submit' value='Save' disabled='disabled' id='SaveChanges' onclick='$(RCTA).toggleEditor();'>";
-//	printImageHREF ('SAVE', 'Save changes', TRUE);
 	echo "</td></tr>";
 	echo '</table>';
 	echo "</form>";
@@ -517,39 +514,50 @@ function renderEditAttributesForm ()
 	finishPortlet();
 }
 
+function getAttributeOptions ($attrMap)
+{
+	$ret = array();
+	$shortType = array
+	(
+		'uint' => 'U',
+		'float' => 'F',
+		'string' => 'S',
+		'dict' => 'D',
+		'date' => 'T',
+	);
+	foreach ($attrMap as $attr)
+		$ret[$attr['id']] = sprintf ('[%s] %s', $shortType[$attr['type']], $attr['name']);
+	return $ret;
+}
+
 function renderEditAttrMapForm ()
 {
-	function printNewItemTR ($attrMap)
+	function printNewItemTR ($aselect)
 	{
 		printOpFormIntro ('add');
-		echo '<tr><td colspan=2 class=tdleft>';
-		echo '<select name=attr_id>';
-		$shortType['uint'] = 'U';
-		$shortType['float'] = 'F';
-		$shortType['string'] = 'S';
-		$shortType['dict'] = 'D';
-		$shortType['date'] = 'T';
-		foreach ($attrMap as $attr)
-			echo "<option value=${attr['id']}>[" . $shortType[$attr['type']] . "] ${attr['name']}</option>";
-		echo "</select></td><td class=tdleft>";
+		echo '<tr>';
+		echo "<td colspan=2 class=tdleft>${aselect}</td>";
+		echo '<td class=tdleft>';
 		printImageHREF ('add', '', TRUE);
 		echo ' ';
 		$objtypes = readChapter (CHAP_OBJTYPE, 'o');
 		printNiftySelect (cookOptgroups ($objtypes), array ('name' => 'objtype_id'));
-		echo ' <select name=chapter_no><option value=0>-- dictionary chapter for [D] attributes --</option>';
+		$choptions = array (0 => '-- dictionary chapter for [D] attributes --');
 		foreach (getChapterList() as $chapter)
 			if ($chapter['sticky'] != 'yes')
-				echo "<option value='${chapter['id']}'>${chapter['name']}</option>";
-		echo '</select></td></tr></form>';
+				$choptions[$chapter['id']] = $chapter['name'];
+		echo ' ' . getSelect ($choptions, array ('name' => 'chapter_no'));
+		echo '</td></tr></form>';
 	}
 	global $attrtypes, $nextorder;
 	$order = 'odd';
 	$attrMap = getAttrMap();
+	$aselect = getSelect (getAttributeOptions ($attrMap), array ('name' => 'attr_id'));
 	startPortlet ('Attribute map');
 	echo "<table class=cooltable border=0 cellpadding=5 cellspacing=0 align=center>";
 	echo '<tr><th class=tdleft>Attribute name</th><th class=tdleft>Attribute type</th><th class=tdleft>Applies to</th></tr>';
 	if (getConfigVar ('ADDNEW_AT_TOP') == 'yes')
-		printNewItemTR ($attrMap);
+		printNewItemTR ($aselect);
 	foreach ($attrMap as $attr)
 	{
 		if (!count ($attr['application']))
@@ -574,7 +582,7 @@ function renderEditAttrMapForm ()
 		$order = $nextorder[$order];
 	}
 	if (getConfigVar ('ADDNEW_AT_TOP') != 'yes')
-		printNewItemTR ($attrMap);
+		printNewItemTR ($aselect);
 	echo "</table>\n";
 	finishPortlet();
 }
@@ -865,10 +873,9 @@ function renderTagTree ()
 	echo '</table></center>';
 }
 
-function renderTagRowForEditor ($taginfo, $level = 0)
+function renderTagRowForEditor ($taginfo, $parent_name = NULL, $level = 0)
 {
 	$self = __FUNCTION__;
-	global $taglist;
 	if (!count ($taginfo['kids']))
 		$level++; // Idem
 	$trclass = $taginfo['is_assignable'] == 'yes' ? '' : ($taginfo['kidc'] ? ' class=trnull' : ' class=trwarning');
@@ -888,38 +895,39 @@ function renderTagRowForEditor ($taginfo, $level = 0)
 	else
 		printSelect (array ('yes' => 'yes', 'no' => 'no'), array ('name' => 'is_assignable'), $taginfo['is_assignable']);
 	echo '</td><td class=tdleft>';
-	$parent_id = $taginfo['parent_id'] ? $taginfo['parent_id'] : 0;
-	$parent_name = $taginfo['parent_id'] ? htmlspecialchars ($taglist[$taginfo['parent_id']]['tag']) : '-- NONE --';
-	echo getSelect
-	(
-		array ($parent_id => $parent_name),
-		array ('name' => 'parent_id', 'id' => 'tagid_' . $taginfo['id'], 'class' => 'taglist-popup'),
-		$taginfo['parent_id'],
-		FALSE
-	);
+
+	$poptions = $parent_name === NULL ?
+		array (0 => '-- NONE --') :
+		array ($taginfo['parent_id'] => $parent_name);
+	$sparams = array ('name' => 'parent_id', 'id' => 'nodeid_' . $taginfo['id'], 'class' => 'nodelist-popup');
+	echo getSelect ($poptions, $sparams, $taginfo['parent_id'], FALSE);
+
 	echo '</td><td>' . getImageHREF ('save', 'Save changes', TRUE) . '</form></td></tr>';
 	foreach ($taginfo['kids'] as $kid)
-		$self ($kid, $level + 1);
+		$self ($kid, $taginfo['tag'], $level + 1);
 }
 
-function renderTagTreeEditor ()
+function addParentNodeOptionsJS ($prefix, $nodetype)
 {
 	addJS
 	(
 <<<END
-function tageditor_showselectbox(e) {
-	$(this).load('index.php', {module: 'ajax', ac: 'get-tag-select', tagid: this.id});
-	$(this).unbind('mousedown', tageditor_showselectbox);
+function ${prefix}_showselectbox(e) {
+	$(this).load('index.php', {module: 'ajax', ac: 'get-parent-node-options', node_type: '${nodetype}', node_id: this.id});
+	$(this).unbind('mousedown', ${prefix}_showselectbox);
 }
 $(document).ready(function () {
-	$('select.taglist-popup').bind('mousedown', tageditor_showselectbox);
+	$('select.nodelist-popup').bind('mousedown', ${prefix}_showselectbox);
 });
 END
 		, TRUE
 	);
+}
+
+function renderTagTreeEditor ()
+{
 	function printNewItemTR ($options)
 	{
-		global $taglist;
 		printOpFormIntro ('createTag');
 		echo '<tr>';
 		echo '<td align=left style="padding-left: 16px;">' . getImageHREF ('create', 'Create tag', TRUE) . '</td>';
@@ -930,33 +938,9 @@ END
 		echo '</tr></form>';
 	}
 	global $taglist;
-
-	$options = array (0 => '-- NONE --');
-	foreach ($taglist as $taginfo)
-		$options[$taginfo['id']] = htmlspecialchars ($taginfo['tag']);
-
-	$otags = getOrphanedTags();
-	if (count ($otags))
-	{
-		startPortlet ('fallen leaves');
-		echo "<table cellspacing=0 cellpadding=5 align=center class=widetable>\n";
-		echo '<tr class=trerror><th>tag name</th><th>parent tag</th><th>&nbsp;</th></tr>';
-		foreach ($otags as $taginfo)
-		{
-			printOpFormIntro ('updateTag', array ('tag_id' => $taginfo['id'], 'tag_name' => $taginfo['tag']));
-			echo "<input type=hidden name=is_assignable value=${taginfo['is_assignable']}>";
-			echo '<tr>';
-			echo '<td>' . $taginfo['tag'] . '</td>';
-			echo '<td>' . getSelect ($options, array ('name' => 'parent_id'), $taglist[$taginfo['id']]['parent_id']) . '</td>';
-			echo '<td>' . getImageHREF ('save', 'Save changes', TRUE) . '</td>';
-			echo '</tr></form>';
-		}
-		echo '</table>';
-		finishPortlet();
-	}
-
-	startPortlet ('tag tree');
-	echo "<table cellspacing=0 cellpadding=5 align=center class=widetable>\n";
+	addParentNodeOptionsJS ('tageditor', 'existing tag');
+	$options = getParentNodeOptionsNew ($taglist, 'tag');
+	echo '<br><table cellspacing=0 cellpadding=5 align=center class=widetable>';
 	echo '<tr><th>&nbsp;</th><th>tag name</th><th>assignable</th><th>parent tag</th><th>&nbsp;</th></tr>';
 	if (getConfigVar ('ADDNEW_AT_TOP') == 'yes')
 		printNewItemTR ($options);
@@ -965,7 +949,47 @@ END
 	if (getConfigVar ('ADDNEW_AT_TOP') != 'yes')
 		printNewItemTR ($options);
 	echo '</table>';
-	finishPortlet();
+}
+
+function renderGraphCycleResolver()
+{
+	global $pageno;
+	// $fieldmap below does not contain 'parent_id' as it is done by the SELECT.
+	switch ($pageno)
+	{
+		case 'tagtree';
+			global $taglist;
+			$nodelist = $taglist;
+			$textfield = 'tag';
+			$opcode = 'updateTag';
+			$fieldmap = array
+			(
+				'tag_id' => 'id',
+				'tag_name' => 'tag',
+				'is_assignable' => 'is_assignable',
+			);
+			break;
+		default:
+			throw new RackTablesError ('unexpected call to tabhandler function', RackTablesError::INTERNAL);
+	}
+	$invalids = getInvalidNodes ($nodelist);
+	$options = getParentNodeOptionsNew ($nodelist, $textfield);
+	echo '<br><table cellspacing=0 cellpadding=5 align=center class=widetable>';
+	echo '<tr><th>node</th><th>current parent node</th><th>new parent node</th><th>&nbsp;</th></tr>';
+	foreach ($invalids as $node)
+	{
+		$formvalues = array();
+		foreach ($fieldmap as $form_param => $nodefield)
+			$formvalues[$form_param] = $node[$nodefield];
+		printOpFormIntro ($opcode, $formvalues);
+		echo '<tr>';
+		echo '<td class=tdleft>' . stringForLabel ($node[$textfield]) . '</td>';
+		echo '<td class="tdleft trerror">' . stringForLabel ($invalids[$node['parent_id']][$textfield]) . '</td>';
+		echo '<td>' . getSelect ($options, array ('name' => 'parent_id'), $node['parent_id']) . '</td>';
+		echo '<td>' . getImageHREF ('save', 'Save changes', TRUE) . '</td>';
+		echo '</tr></form>';
+	}
+	echo '</table>';
 }
 
 function renderMyAccount ()

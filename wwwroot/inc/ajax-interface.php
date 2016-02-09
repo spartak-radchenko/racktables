@@ -61,7 +61,7 @@ function formatPortMacHints ($object_id)
 	if ($_REQUEST['ac'] == 'get-port-portmac')
 	{
 		$port_name = $_REQUEST['port_name'];
-		$ports = reduceSubarraysToColumn (getObjectPortsAndLinks($_REQUEST['object_id']), 'name');
+		$ports = reduceSubarraysToColumn (getObjectPortsAndLinks ($_REQUEST['object_id'], FALSE), 'name');
 		$macList = in_array($port_name, $ports) ?
 				queryDevice ($object_id, 'getportmaclist', array ($port_name)) :
 				array();
@@ -120,34 +120,15 @@ function formatLoggedSpan ($log_item, $text, $html_class = '')
 		">$text</span>";
 }
 
-function getTagSelectAJAX()
-{
-	global $taglist;
-	$options = array();
-	$selected_id = '';
-	if (! isset($_REQUEST['tagid']))
-		$options['error'] = "Sorry, param 'tagid' is empty. Reload page and try again";
-	elseif (! preg_match("/tagid_(\d+)/i", $_REQUEST['tagid'], $m))
-		$options['error'] = "Sorry, wrong format tagid:'".$_REQUEST['tagid']."'. Reload page and try again";
-	else
-	{
-		$current_tag_id = $m[1];
-		$selected_id = $taglist[$current_tag_id]['parent_id'];
-		$options[0] = '-- NONE --';
-		foreach ($taglist as $tag_id => $taginfo)
-			if (! in_array ($current_tag_id, $taginfo['trace']) && $current_tag_id != $tag_id)
-				$options[$tag_id] = $taginfo['tag'];
-	}
-	foreach ($options as $tag_id => $value)
-		echo "<option value='$tag_id'" .
-			($tag_id == $selected_id ? ' selected' : '') .
-			'>' . htmlspecialchars ($value) . '</option>';
-}
-
 function getLocationSelectAJAX()
 {
+	global $pageno, $tabno;
+	$pageno = 'rackspace';
+	$tabno = 'default';
+	fixContext();
+	assertPermission();
 	$locationlist = listCells ('location');
-	$locationtree = treeFromList ($locationlist); // adds ['trace'] keys into $locationlist items
+	$locationtree = treeFromList (addTraceToNodes ($locationlist));
 	$options = array ();
 	$selected_id = '';
 	if (! isset($_REQUEST['locationid']))
@@ -171,6 +152,38 @@ function getLocationSelectAJAX()
 		if ($location['kidc'] > 0)
 			printLocationChildrenSelectOptions ($location, $selected_id, $current_location_id);
 	}
+}
+
+function getParentNodeOptionsAJAX()
+{
+	global $pageno, $tabno;
+	$selected_id = NULL;
+	try
+	{
+		$tmp = genericAssertion ('node_id', 'string');
+		if (! preg_match ('/^nodeid_(\d+)$/', $tmp, $m))
+			throw new InvalidRequestArgException ('node_id', $tmp, 'format mismatch');
+		$node_id = $m[1];
+		switch ($node_type = genericAssertion ('node_type', 'string'))
+		{
+			case 'existing tag':
+				$pageno = 'tagtree';
+				$tabno = 'default';
+				fixContext();
+				assertPermission();
+				global $taglist;
+				$selected_id = $taglist[$node_id]['parent_id'];
+				$options = getParentNodeOptionsExisting ($taglist, 'tag', $node_id);
+				break;
+			default:
+				throw new InvalidRequestArgException ('node_type', $node_type, 'unknown type');
+		}
+	}
+	catch (Exception $e)
+	{
+		$options = array ('error' => $e->getMessage());
+	}
+	echo getSelectOptions ($options, $selected_id);
 }
 
 function verifyCodeAJAX()
@@ -277,6 +290,11 @@ function updateCableIdAJAX()
 
 function updateRackSortOrderAJAX()
 {
+	global $pageno, $tabno;
+	$pageno = 'row';
+	$tabno = 'editracks';
+	fixContext();
+	assertPermission (NULL, NULL, 'save'); // FIXME: operation code not in navigation.php
 	updateRackSortOrder ($_REQUEST['racks']);
 	echo 'OK';
 }

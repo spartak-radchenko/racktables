@@ -392,7 +392,7 @@ END;
 		echo "<img src=?module=chrome&uri=pix/1x1t.gif onLoad=collapseAll(this)>"; // dirty hack to collapse all when page is displayed
 		echo "</label></td></tr>\n";
 		echo "<tr><td class=tagbox><hr>\n";
-		renderLocationCheckbox (treeFromList ($locationlist));
+		renderLocationCheckbox (treeFromList (addTraceToNodes ($locationlist)));
 		echo "<hr></td></tr>\n";
 		echo '<tr><td>';
 		printImageHREF ('setfilter', 'set filter', TRUE);
@@ -581,7 +581,7 @@ function renderLocationSelectTree ($select_name, $selected_id = NULL)
 	echo "<select name='${select_name}'>";
 	echo '<option value=0>-- NONE --</option>';
 	$locationlist = listCells ('location');
-	foreach (treeFromList ($locationlist) as $location)
+	foreach (treeFromList (addTraceToNodes ($locationlist)) as $location)
 	{
 		echo "<option value=${location['id']} style='font-weight: bold' ";
 		if ($location['id'] == $selected_id )
@@ -624,7 +624,7 @@ JSTXT;
 		printNewItemTR();
 
 	$locations = listCells ('location');
-	renderLocationRowForEditor (treeFromList ($locations));
+	renderLocationRowForEditor (treeFromList (addTraceToNodes ($locations)));
 
 	if (getConfigVar ('ADDNEW_AT_TOP') != 'yes')
 		printNewItemTR();
@@ -849,10 +849,10 @@ function printObjectDetailsForRenderRack ($object_id, $hl_obj_id = 0)
 					$slotTitle[$slot] .= ", visible label is \"${childData['label']}\"";
 				$slotTitle[$slot] .= "'>";
 				$slotClass[$slot] = 'state_T';
-				if ($childData['has_problems'] == 'yes')
-					$slotClass[$slot] = 'state_Tw';
 				if ($childData['id'] == $hl_obj_id)
-					$slotClass[$slot] = 'state_Th';
+					$slotClass[$slot] .= 'h';
+				if ($childData['has_problems'] == 'yes')
+					$slotClass[$slot] .= 'w';
 			}
 		}
 		natsort($childNames);
@@ -1011,7 +1011,7 @@ function renderRackSortForm ($row_id)
 				update : function () {
 					serial = $('#sortRacks').sortable('serialize');
 					$.ajax({
-						url: 'index.php?module=ajax&ac=upd-rack-sort-order',
+						url: 'index.php?module=ajax&ac=upd-rack-sort-order&row_id=${row_id}',
 						type: 'post',
 						data: serial,
 					});
@@ -1032,7 +1032,7 @@ JSTXT;
 	finishPortlet();
 }
 
-function renderNewRackForm ($row_id)
+function renderNewRackForm()
 {
 	$default_height = getConfigVar ('DEFAULT_RACK_HEIGHT');
 	if ($default_height == 0)
@@ -2205,7 +2205,6 @@ function renderRackSpaceForObject ($object_id)
 	if (! isset ($_REQUEST['show_all_racks']) and getConfigVar ('FILTER_RACKLIST_BY_TAGS') == 'yes')
 	{
 		$matching_racks = array();
-		$object = spotEntity ('object', $object_id);
 		$matched_tags = array();
 		foreach ($allRacksData as $rack)
 		{
@@ -3200,7 +3199,7 @@ function renderIPv6NetworkAddresses ($netinfo)
 function renderIPNetworkProperties ($id)
 {
 	global $pageno;
-	$netdata = spotEntity ($pageno, $id);
+	$netdata = spotEntity (etypeByPageno(), $id);
 	echo "<center><h1>${netdata['ip']}/${netdata['mask']}</h1></center>\n";
 	printOpFormIntro ('editRange');
 	echo "<table border=0 cellpadding=5 cellspacing=0 align='center'>\n";
@@ -3221,7 +3220,7 @@ function renderIPNetworkProperties ($id)
 	if (! isIPNetworkEmpty ($netdata))
 		echo getOpLink (NULL, 'delete this prefix', 'nodestroy', 'There are ' . count ($netdata['addrlist']) . ' allocations inside');
 	else
-		echo getOpLink (array('op'=>'del','id'=>$id), 'delete this prefix', 'destroy');
+		echo getOpLink (array('op'=>'del'), 'delete this prefix', 'destroy');
 	echo '</center>';
 }
 
@@ -3908,10 +3907,7 @@ function renderAtomGrid ($data, $is_ro=FALSE)
 function renderCellList ($realm = NULL, $title = 'items', $do_amplify = FALSE, $celllist = NULL)
 {
 	if ($realm === NULL)
-	{
-		global $pageno;
-		$realm = $pageno;
-	}
+		$realm = etypeByPageno();
 	global $nextorder;
 	$order = 'odd';
 	$cellfilter = getCellFilter();
@@ -4655,14 +4651,9 @@ function renderFileSummary ($file)
 {
 	$summary = array();
 	$summary['Type'] = stringForTD ($file['type']);
-	$summary['Size'] =
-	(
-		isolatedPermission ('file', 'download', $file) ?
-		(
-			"<a href='?module=download&file_id=${file['id']}'>" .
-			getImageHREF ('download', 'Download file') . '</a>&nbsp;'
-		) : ''
-	) . formatFileSize ($file['size']);
+	$btn = isolatedPermission ('file', 'download', $file) ?
+		(makeFileDownloadButton ($file['id']) . '&nbsp;') : '';
+	$summary['Size'] = $btn . formatFileSize ($file['size']);
 	$summary['Created'] = $file['ctime'];
 	$summary['Modified'] = $file['mtime'];
 	$summary['Accessed'] = $file['atime'];
@@ -4746,9 +4737,7 @@ function renderFileReuploader ()
 
 function renderFileDownloader ($file_id)
 {
-	echo "<br><center><a target='_blank' href='?module=download&file_id=${file_id}&asattach=1'>";
-	printImageHREF ('DOWNLOAD');
-	echo '</a></center>';
+	echo '<br><center>' . makeFileDownloadButton ($file_id, 'DOWNLOAD') . '</center>';
 }
 
 function renderFileProperties ($file_id)
@@ -5043,12 +5032,7 @@ function renderCell ($cell)
 		echo count ($cell['etags']) ? ("<small>" . serializeTags ($cell['etags']) . "</small>") : '&nbsp;';
 		echo '</td></tr><tr><td>';
 		if (isolatedPermission ('file', 'download', $cell))
-		{
-			// FIXME: reuse renderFileDownloader()
-			echo "<a href='?module=download&file_id=${cell['id']}'>";
-			printImageHREF ('download', 'Download file');
-			echo '</a>&nbsp;';
-		}
+			echo makeFileDownloadButton ($cell['id']) . '&nbsp;';
 		echo formatFileSize ($cell['size']);
 		echo "</td></tr></table>";
 		break;
@@ -5688,7 +5672,7 @@ function render8021QOrderForm ($some_id)
 				$decision = permitted (NULL, NULL, 'add');
 				restoreContext ($ctx);
 				if ($decision)
-					$options[$nominee['id']] = niftyString ($nominee['description'], 30, FALSE);
+					$options[$nominee['id']] = $nominee['description'];
 			}
 			echo '<td>' . getSelect ($options, array ('name' => 'vst_id', 'size' => getConfigVar ('MAXSELSIZE')), $focus['prev_vstid']) . '</td>';
 		}
@@ -6056,7 +6040,7 @@ function get8021QPortTrClass ($port, $domain_vlans, $desired_mode = NULL)
 // them is selected as current, also display a form for its setup.
 function renderObject8021QPorts ($object_id)
 {
-	global $pageno, $tabno, $sic;
+	global $sic;
 	$vswitch = getVLANSwitchInfo ($object_id);
 	$vdom = getVLANDomain ($vswitch['domain_id']);
 	$req_port_name = array_fetch ($sic, 'port_name', '');
@@ -6071,8 +6055,6 @@ function renderObject8021QPorts ($object_id)
 	echo $req_port_name == '' ? '<th width="25%">new&nbsp;config</th></tr>' : '<th>(zooming)</th></tr>';
 	if ($req_port_name == '');
 		printOpFormIntro ('save8021QConfig', array ('mutex_rev' => $vswitch['mutex_rev'], 'form_mode' => 'save'));
-	$object = spotEntity ('object', $object_id);
-	amplifyCell ($object);
 	$sockets = array();
 	if (isset ($_REQUEST['hl_port_id']))
 	{
@@ -6081,22 +6063,28 @@ function renderObject8021QPorts ($object_id)
 		$hl_port_name = NULL;
 		addAutoScrollScript ("port-$hl_port_id");
 	}
-	foreach ($object['ports'] as $port)
+	$indexed_ports = array();
+	$breed = detectDeviceBreed ($object_id);
+	foreach (getObjectPortsAndLinks ($object_id, FALSE) as $port)
+	{
+		$pn = shortenIfName ($port['name'], $breed);
+		if (! isset ($indexed_ports[$pn]) || ! $indexed_ports[$pn]['linked'])
+			$indexed_ports[$pn] = $port;
 		if (mb_strlen ($port['name']) and array_key_exists ($port['name'], $desired_config))
 		{
 			if (isset ($hl_port_id) and $hl_port_id == $port['id'])
 				$hl_port_name = $port['name'];
-			$socket = array ('interface' => formatPortIIFOIF ($port));
+			$socket = array ('interface' => formatPortIIFOIF ($port), 'link' => '&nbsp;');
 			if ($port['remote_object_id'])
 				$socket['link'] = formatLoggedSpan ($port['last_log'], formatLinkedPort ($port));
 			elseif (strlen ($port['reservation_comment']))
-				$socket['link'] = formatLoggedSpan ($port['last_log'], 'Rsv:', 'strong underline') . ' ' .
-				formatLoggedSpan ($port['last_log'], $port['reservation_comment']);
-			else
-				$socket['link'] = '&nbsp;';
+				$socket['link'] = implode (' ', array(
+					formatLoggedSpan ($port['last_log'], 'Rsv:', 'strong underline'),
+					formatLoggedSpan ($port['last_log'], $port['reservation_comment'])
+				));
 			$sockets[$port['name']][] = $socket;
 		}
-	unset ($object);
+	}
 	$nports = 0; // count only access ports
 	switchportInfoJS ($object_id); // load JS code to make portnames interactive
 	foreach ($desired_config as $port_name => $port)
@@ -6136,7 +6124,7 @@ function renderObject8021QPorts ($object_id)
 		default:
 			throw new InvalidArgException ('vst_role', $port['vst_role']);
 		}
-		if (!checkPortRole ($vswitch, $port_name, $port))
+		if (isset ($indexed_ports[$port_name]) && ! checkPortRole ($vswitch, $indexed_ports[$port_name], $port_name, $port))
 			$trclass = 'trerror';
 
 		if (!array_key_exists ($port_name, $sockets))
@@ -7124,17 +7112,14 @@ function renderVST ($vst_id)
 
 function renderVSTRulesEditor ($vst_id)
 {
+	global $port_role_options;
 	$vst = spotEntity ('vst', $vst_id);
 	amplifyCell ($vst);
-	if ($vst['rulec'])
-		$source_options = array();
-	else
-	{
-		$source_options = array();
+	$source_options = array();
+	if (! $vst['rulec'])
 		foreach (listCells ('vst') as $vst_id => $vst_info)
 			if ($vst_info['rulec'])
-				$source_options[$vst_id] = stringForLabel ('(' . $vst_info['rulec'] . ') ' . $vst_info['description']);
-	}
+				$source_options[$vst_id] = '(' . $vst_info['rulec'] . ') ' . $vst_info['description'];
 	addJS ('js/vst_editor.js');
 	echo '<center><h1>' . stringForLabel ($vst['description']) . '</h1></center>';
 	if (count ($source_options))
@@ -7148,14 +7133,13 @@ function renderVSTRulesEditor ($vst_id)
 		finishPortlet();
 		startPortlet ('add rules one by one');
 	}
-	printOpFormIntro ('upd');
+	printOpFormIntro ('upd', array ('mutex_rev' => $vst['mutex_rev']));
 	echo '<table cellspacing=0 cellpadding=5 align=center class="widetable template-rules">';
 	echo "<tr><th class=tdright>Tags:</th><td class=tdleft style='border-top: none;'>";
 	printTagsPicker ();
 	echo "</td></tr>";
 	echo '<tr><th></th><th>sequence</th><th>regexp</th><th>role</th>';
 	echo '<th>VLAN IDs</th><th>comment</th><th><a href="#" class="vst-add-rule initial">' . getImageHREF ('add', 'Add rule') . '</a></th></tr>';
-	global $port_role_options;
 	$row_html  = '<td><a href="#" class="vst-del-rule">' . getImageHREF ('destroy', 'delete rule') . '</a></td>';
 	$row_html .= '<td><input type=text name=rule_no value="%s" size=3></td>';
 	$row_html .= '<td><input type=text name=port_pcre value="%s"></td>';
@@ -7165,11 +7149,10 @@ function renderVSTRulesEditor ($vst_id)
 	$row_html .= '<td><a href="#" class="vst-add-rule">' . getImageHREF ('add', 'Duplicate rule') . '</a></td>';
 	addJS ("var new_vst_row = '" . addslashes (sprintf ($row_html, '', '', getSelect ($port_role_options, array ('name' => 'port_role'), 'anymode'), '', '')) . "';", TRUE);
 	startSession();
-	foreach (isset ($_SESSION['vst_edited']) ? $_SESSION['vst_edited'] : $vst['rules'] as $item)
+	foreach (array_fetch ($_SESSION, 'vst_edited', $vst['rules']) as $item)
 		printf ('<tr>' . $row_html . '</tr>', $item['rule_no'], htmlspecialchars ($item['port_pcre'], ENT_QUOTES),  getSelect ($port_role_options, array ('name' => 'port_role'), $item['port_role']), $item['wrt_vlans'], $item['description']);
 	echo '</table>';
 	echo '<input type=hidden name="template_json">';
-	echo '<input type=hidden name="mutex_rev" value="' . $vst['mutex_rev'] . '">';
 	echo '<center>' . getImageHref ('SAVE', 'Save template', TRUE) . '</center>';
 	echo '</form>';
 	if (isset ($_SESSION['vst_edited']))
@@ -7281,7 +7264,7 @@ function renderDiscoveredNeighbors ($object_id)
 
 				// get list of ports that have name matching CDP portname
 				$remote_ports = array(); // list of remote (by DP info) ports
-				foreach (getObjectPortsAndLinks ($dp_remote_object_id) as $port)
+				foreach (getObjectPortsAndLinks ($dp_remote_object_id, FALSE) as $port)
 					if ($port['name'] == $dp_neighbor['port'])
 					{
 						$portinfo_remote = $port;

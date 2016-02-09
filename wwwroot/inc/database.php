@@ -887,10 +887,12 @@ END;
 	return $ret;
 }
 
-function getObjectPortsAndLinks ($object_id)
+function getObjectPortsAndLinks ($object_id, $sorted = TRUE)
 {
 	$ret = fetchPortList ("Port.object_id = ?", array ($object_id));
-	return sortPortList ($ret, TRUE);
+	if ($sorted)
+		$ret = sortPortList ($ret, TRUE);
+	return $ret;
 }
 
 // Fetch the object type via SQL.
@@ -932,10 +934,10 @@ function commitAddObject ($new_name, $new_label, $new_type_id, $new_asset_no, $t
 		'Object',
 		array
 		(
-			'name' => !strlen ($new_name) ? NULL : $new_name,
-			'label' => !strlen ($new_label) ? NULL : $new_label,
+			'name' => nullIfEmptyStr ($new_name),
+			'label' => nullIfEmptyStr ($new_label),
 			'objtype_id' => $new_type_id,
-			'asset_no' => !strlen ($new_asset_no) ? NULL : $new_asset_no,
+			'asset_no' => nullIfEmptyStr ($new_asset_no),
 		)
 	);
 	$object_id = lastInsertID();
@@ -948,7 +950,7 @@ function commitAddObject ($new_name, $new_label, $new_type_id, $new_asset_no, $t
 			$realm = 'row';
 			break;
 		case 1562:
-			$realm = 'localtion';
+			$realm = 'location';
 			break;
 		default:
 			$realm = 'object';
@@ -973,7 +975,7 @@ function commitRenameObject ($object_id, $new_name)
 		'Object',
 		array
 		(
-			'name' => !mb_strlen ($new_name) ? NULL : $new_name,
+			'name' => nullIfEmptyStr ($new_name),
 		),
 		array
 		(
@@ -992,11 +994,11 @@ function commitUpdateObject ($object_id, $new_name, $new_label, $new_has_problem
 		'Object',
 		array
 		(
-			'name' => !mb_strlen ($new_name) ? NULL : $new_name,
-			'label' => !mb_strlen ($new_label) ? NULL : $new_label,
+			'name' => nullIfEmptyStr ($new_name),
+			'label' => nullIfEmptyStr ($new_label),
 			'has_problems' => !mb_strlen ($new_has_problems) ? 'no' : $new_has_problems,
-			'asset_no' => !mb_strlen ($new_asset_no) ? NULL : $new_asset_no,
-			'comment' => $new_comment == '' ? NULL : $new_comment,
+			'asset_no' => nullIfEmptyStr ($new_asset_no),
+			'comment' => nullIfEmptyStr ($new_comment),
 		),
 		array
 		(
@@ -1099,6 +1101,7 @@ function getLocationChildrenList ($location_id, $children = array ())
 	return $children;
 }
 
+// DEPRECATED: use getTagDescendents() instead
 // This function is recursive and returns only tag IDs.
 function getTagChildrenList ($tag_id, $children = array ())
 {
@@ -1768,7 +1771,7 @@ function commitAddPort ($object_id = 0, $port_name, $port_type_id, $port_label, 
 				'label' => $port_label,
 				'iif_id' => $iif_id,
 				'type' => $oif_id,
-				'l2address' => nullEmptyStr ($db_l2address),
+				'l2address' => nullIfEmptyStr ($db_l2address),
 			)
 		);
 		lastCreated ('port', lastInsertID());
@@ -1810,7 +1813,7 @@ function commitUpdatePort ($object_id, $port_id, $port_name, $port_type_id, $por
 			throw new InvalidRequestArgException ('port_l2address', $db_l2address, 'address belongs to another object');
 		}
 		$prev_comment = getPortReservationComment ($port_id);
-		$reservation_comment = mb_strlen ($port_reservation_comment) ? $port_reservation_comment : NULL;
+		$reservation_comment = nullIfEmptyStr ($port_reservation_comment);
 		switch (1)
 		{
 		case preg_match ('/^([[:digit:]]+)-([[:digit:]]+)$/', $port_type_id, $matches):
@@ -1834,7 +1837,7 @@ function commitUpdatePort ($object_id, $port_id, $port_name, $port_type_id, $por
 				'type' => $oif_id,
 				'label' => $port_label,
 				'reservation_comment' => $reservation_comment,
-				'l2address' => nullEmptyStr ($db_l2address),
+				'l2address' => nullIfEmptyStr ($db_l2address),
 			),
 			array
 			(
@@ -1860,7 +1863,7 @@ function commitUpdatePortComment ($port_id, $port_reservation_comment)
 	global $dbxlink;
 	$dbxlink->beginTransaction();
 	$prev_comment = getPortReservationComment ($port_id, 'FOR UPDATE');
-	$reservation_comment = mb_strlen ($port_reservation_comment) ? $port_reservation_comment : NULL;
+	$reservation_comment = nullIfEmptyStr ($port_reservation_comment);
 	usePreparedUpdateBlade
 	(
 		'Port',
@@ -1923,7 +1926,7 @@ function linkPorts ($porta, $portb, $cable = NULL)
 		(
 			'porta' => $porta,
 			'portb' => $portb,
-			'cable' => mb_strlen ($cable) ? $cable : NULL
+			'cable' => nullIfEmptyStr ($cable),
 		)
 	);
 	usePreparedExecuteBlade
@@ -1954,7 +1957,7 @@ function commitUpdatePortLink ($port_id, $cable = NULL)
 	return usePreparedUpdateBlade
 	(
 		'Link',
-		array ('cable' => mb_strlen ($cable) ? $cable : NULL),
+		array ('cable' => nullIfEmptyStr ($cable)),
 		array ('porta' => $port_id, 'portb' => $port_id),
 		'OR'
 	);
@@ -2639,8 +2642,7 @@ function fetchIPv4AddressNetworkRow ($ip_bin, $masklen = 32)
 		'order by mask desc limit 1';
 	$ip_db = ip4_bin2db ($ip_bin);
 	$result = usePreparedSelectBlade ($query, array ($ip_db, $ip_db, $masklen));
-	$row = $result->fetch (PDO::FETCH_ASSOC);
-	return $row === FALSE ? NULL : $row;
+	return nullIfFalse ($result->fetch (PDO::FETCH_ASSOC));
 }
 
 // Return the id of the smallest IPv6 network containing the given IPv6 address
@@ -2655,8 +2657,7 @@ function fetchIPv6AddressNetworkRow ($ip_bin, $masklen = 128)
 {
 	$query = 'select * from IPv6Network where ip <= ? AND last_ip >= ? and mask < ? order by mask desc limit 1';
 	$result = usePreparedSelectBlade ($query, array ($ip_bin, $ip_bin, $masklen));
-	$row = $result->fetch (PDO::FETCH_ASSOC);
-	return $row === FALSE ? NULL : $row;
+	return nullIfFalse ($result->fetch (PDO::FETCH_ASSOC));
 }
 
 // This function is actually used not only to update, but also to create records,
@@ -4032,9 +4033,11 @@ function makeWhereSQL ($where_columns, $conjunction, &$params = array())
 // This swiss-knife blade deletes any number of records from the specified table
 // using the specified key names and values.
 // returns integer - affected rows count. Throws exception on error
-function usePreparedDeleteBlade ($tablename, $columns, $conjunction = 'AND')
+function usePreparedDeleteBlade ($tablename, $columns = array(), $conjunction = 'AND')
 {
 	global $dbxlink;
+	if (! count ($columns))
+		throw new InvalidArgException ('columns', '(empty array)', 'in this function DELETE must have WHERE');
 	$query = "DELETE FROM ${tablename} WHERE " . makeWhereSQL ($columns, $conjunction, $where_values);
 	try
 	{
@@ -4064,9 +4067,13 @@ function usePreparedSelectBlade ($query, $args = array())
 }
 
 // returns integer - affected rows count. Throws exception on error
-function usePreparedUpdateBlade ($tablename, $set_columns, $where_columns, $conjunction = 'AND')
+function usePreparedUpdateBlade ($tablename, $set_columns = array(), $where_columns = array(), $conjunction = 'AND')
 {
 	global $dbxlink;
+	if (! count ($set_columns))
+		throw new InvalidArgException ('set_columns', '(empty array)', 'UPDATE must have SET');
+	if (! count ($where_columns))
+		throw new InvalidArgException ('where_columns', '(empty array)', 'in this function UPDATE must have WHERE');
 	$conj = '';
 	$query = "UPDATE ${tablename} SET ";
 	foreach (array_keys ($set_columns) as $colname)
@@ -4319,23 +4326,10 @@ function generateEntityAutoTags ($cell)
 // enables treeFromList() and sortTree() to do their jobs properly. Doing
 // the same sorting in PHP is possible but complicated and may deliver
 // results different from MySQL.
-function getTagList()
+function getTagList ($extra_sql = '')
 {
-	$result = usePreparedSelectBlade ("SELECT id, parent_id, is_assignable, tag FROM TagTree ORDER BY tag");
-	$ret = reindexById ($result->fetchAll (PDO::FETCH_ASSOC));
-
-	// calculate the 'trace' field of taginfo
-	foreach ($ret as $id => $taginfo)
-	{
-		$trace = array();
-		while ($taginfo['parent_id'])
-		{
-			$trace[] = $taginfo['parent_id'];
-			$taginfo = $ret[$taginfo['parent_id']];
-		}
-		$ret[$id]['trace'] = array_reverse ($trace);
-	}
-	return $ret;
+	$result = usePreparedSelectBlade ("SELECT id, parent_id, is_assignable, tag FROM TagTree ORDER BY tag ${extra_sql}");
+	return reindexById ($result->fetchAll (PDO::FETCH_ASSOC));
 }
 
 function getTagUsage ($ignore_cache = FALSE)
@@ -4378,23 +4372,39 @@ function deleteTagForEntity ($entity_realm, $entity_id, $tag_id)
 	return usePreparedDeleteBlade ('TagStorage', array ('entity_realm' => $entity_realm, 'entity_id' => $entity_id, 'tag_id' => $tag_id));
 }
 
+// A tag's parent may not be one of its children, the tag itself or a tag
+// that does not belong to the forest of rooted trees because of a cycle.
 function commitUpdateTag ($tag_id, $tag_name, $parent_id, $is_assignable)
 {
-	// a tag's parent may not be one of its children
-	if ($parent_id > 0 && in_array ($parent_id, getTagChildrenList ($tag_id)))
-		throw new RackTablesError ("Circular reference for tag ${tag_id}", RackTablesError::INTERNAL);
-
-	usePreparedUpdateBlade
-	(
-		'TagTree',
-		array
+	global $dbxlink;
+	$dbxlink->beginTransaction();
+	try
+	{
+		// Use the copy from within the transaction.
+		assertValidParentId (addTraceToNodes (getTagList ('FOR UPDATE')), $tag_id, $parent_id);
+		usePreparedUpdateBlade
 		(
-			'tag' => $tag_name,
-			'parent_id' => $parent_id == 0 ? NULL : $parent_id,
-			'is_assignable' => $is_assignable
-		),
-		array ('id' => $tag_id)
-	);
+			'TagTree',
+			array
+			(
+				'tag' => $tag_name,
+				'parent_id' => nullIfZero ($parent_id),
+				'is_assignable' => $is_assignable
+			),
+			array ('id' => $tag_id)
+		);
+		$dbxlink->commit();
+	}
+	catch (PDOException $pe)
+	{
+		$dbxlink->rollBack();
+		throw convertPDOException ($pe);
+	}
+	catch (Exception $e)
+	{
+		$dbxlink->rollBack();
+		throw $e;
+	}
 }
 
 // Push a record into TagStorage unconditionally.
@@ -4554,8 +4564,7 @@ function destroyIPv6Prefix ($id)
 function loadScript ($name)
 {
 	$result = usePreparedSelectBlade ("select script_text from Script where script_name = ?", array ($name));
-	$script_text = $result->fetchColumn();
-	return $script_text === FALSE ? NULL : $script_text;
+	return nullIfFalse ($result->fetchColumn());
 }
 
 function saveScript ($name = '', $text)
@@ -4905,8 +4914,7 @@ function getChapterList ()
 function findFileByName ($filename)
 {
 	$result = usePreparedSelectBlade ('SELECT id FROM File WHERE name = ?', array ($filename));
-	$file_id = $result->fetchColumn();
-	return $file_id === FALSE ? NULL : $file_id;
+	return nullIfFalse ($result->fetchColumn());
 }
 
 function fetchLDAPCacheRow ($username, $extrasql = '')
@@ -4989,8 +4997,7 @@ function discardLDAPCache ($maxage = 0)
 function getUserIDByUsername ($username)
 {
 	$result = usePreparedSelectBlade ('SELECT user_id FROM UserAccount WHERE user_name = ?', array ($username));
-	$user_id = $result->fetchColumn();
-	return $user_id === FALSE ? NULL : $user_id;
+	return nullIfFalse ($result->fetchColumn());
 }
 
 # Derive a complete cell structure from the given username regardless
@@ -5362,7 +5369,7 @@ function getVlanRow ($vlan_ck)
 		'(SELECT group_id FROM VLANDomain WHERE id = domain_id) AS domain_group_id ' .
 		'FROM VLANDescription WHERE domain_id = ? AND vlan_id = ?';
 	$result = usePreparedSelectBlade ($query, array ($vdom_id, $vlan_id));
-	if (NULL == ($ret = $result->fetch (PDO::FETCH_ASSOC)))
+	if (NULL === $ret = $result->fetch (PDO::FETCH_ASSOC))
 		throw new EntityNotFoundException ('VLAN', $vlan_ck);
 	$ret['vlan_ck'] = $vlan_ck;
 	return $ret;
@@ -6063,6 +6070,7 @@ function getDBName()
 	global $pdo_dsn;
 	if (preg_match ('/\bdbname=(.+?)(;|$)/', $pdo_dsn, $m))
 		return $m[1];
+	throw new RackTablesError ('failed to spot "dbname" in $pdo_dsn', RackTablesError::INTERNAL);
 }
 
 // Sets exclusive server-global named lock.

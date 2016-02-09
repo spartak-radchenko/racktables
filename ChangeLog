@@ -1,4 +1,6 @@
-0.20.11
+0.20.12
+	update: Huawei telnet gateway uses the 'terminal echo-mode line' command
+0.20.11 2016-02-07
 	bugfix: Tag Picker does not display the full tag list as a tree (#1403)
 	bugfix: race conditions in 802.Q deploy (switch remained synced after recalc)
 	bugfix: catch EntityNotFound exceptions in data integrity report (#1439)
@@ -11,6 +13,7 @@
 	bugfix: LivePorts tab was displayed only if $any_op was allowed in permissions
 	bugfix: chapter editor: ability to re-name dictionary items keeping wiki-links
 	bugfix: IP load balancer config was not removed when wiping object's data
+	bugfix: fix file upload error handling
 	update: SNMP support for Cisco C2960-Plus series
 	update: ability to delete a VLAN keeping it in the VLAN ranges on 802.1Q ports
 	update: sort by parent locations on the Rackspace page (#1153)
