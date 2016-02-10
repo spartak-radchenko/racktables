@@ -40,10 +40,12 @@ class PureFunctionTest extends PHPUnit_Framework_TestCase
 	/**
 	 * @dataProvider providerBinarySame
 	 */
+/*
 	public function testBinarySame ($func, $input1, $input2, $output)
 	{
 		$this->assertSame ($output, $func ($input1, $input2));
 	}
+*/
 
 	/**
 	 * @dataProvider providerTernaryEquals
@@ -139,6 +141,8 @@ class PureFunctionTest extends PHPUnit_Framework_TestCase
 			array ('array_last', array (FALSE, NULL, 0), 0),
 			array ('array_last', array (-1, 0, 1), 1),
 			array ('array_last', array (), NULL), // not an exception in the current implementation
+<<<<<<< HEAD
+=======
 
 			// implicit 2nd argument
 			array ('groupIntsToRanges', array(), array()),
@@ -151,6 +155,7 @@ class PureFunctionTest extends PHPUnit_Framework_TestCase
 			array ('groupIntsToRanges', array (10, 12, 13, 14), array (10, '12-14')),
 			array ('groupIntsToRanges', array (10, 11, 12, 14), array ('10-12', 14)),
 			array ('groupIntsToRanges', array (10, 11, 13, 15, 16), array ('10-11', 13, '15-16')),
+>>>>>>> d6731a9676696e4af489d1e3ad6a24c14918eb88
 		);
 	}
 
@@ -408,6 +413,8 @@ class PureFunctionTest extends PHPUnit_Framework_TestCase
 	{
 		return array
 		(
+<<<<<<< HEAD
+=======
 			// explicit 2nd argument
 			array ('groupIntsToRanges', array(), NULL, array()),
 			array ('groupIntsToRanges', array (1, 2, 3, 4, 5), NULL, array ('1-5')),
@@ -425,6 +432,7 @@ class PureFunctionTest extends PHPUnit_Framework_TestCase
 			array ('groupIntsToRanges', array (1, 2, 3, 4, 5), 3, array ('1-2', '4-5')),
 			array ('groupIntsToRanges', array (1, 2, 3, 4, 5), 4, array ('1-3', 5)),
 			array ('groupIntsToRanges', array (1, 2, 3, 4, 5), 5, array ('1-4')),
+>>>>>>> d6731a9676696e4af489d1e3ad6a24c14918eb88
 		);
 	}
 
