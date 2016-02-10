@@ -3989,6 +3989,7 @@ $known_switches = array // key is system OID w/o "enterprises" prefix
 		'text' => 'IBM System Networking RackSwitch G8000',
 		'processors' => array ('ibm-45-to-48-SFP','ibm-49-to-52-SFP+','ibm-any-1000T'),
 	),
+####################### Spartak
 	'9.1.1745' => array
 	(
 		'dict_key' => 2190,
@@ -4040,13 +4041,20 @@ $known_switches = array // key is system OID w/o "enterprises" prefix
 		'dict_key' => 1390,
 		'text' => 'WS-C2960S-48TS-S: 48 RJ-45/10-100-1000T(X) + 2 SFP/1000',
 		'processors' => array ('catalyst-chassis-49-to-52-1000SFP', 'catalyst-chassis-any-1000T'),
-)	,
+	),
 	'9.1.1226' => array
 	(
 		'dict_key' => 2177,
 		'text' => 'Cisco WS-C3560X-24T-L: 24 RJ-45/10-100-1000T(X) + 4 SFP/1000 + 2 SFP/10000',
 		'processors' => array ('catalyst-chassis-any-1000SFP', 'catalyst-chassis-any-1000T'),
 	),
+	'9.1.1399' => array
+	(
+		'dict_key' => 50102, # Dirty hack
+		'text' => 'Cisco C881G+7-K9',
+		'processors' => array ('catalyst-chassis-any-100TX'),
+	),
+####################### Spartak
 
 );
 
